@@ -27,3 +27,38 @@ describe('createTelemetry 门面骨架', () => {
     await expect(t.shutdown()).resolves.toBeUndefined();
   });
 });
+
+function fakeTransport(use) {
+  return { use, accepts(k){ return use.includes(k); }, sent: [], async send(e){ this.sent.push(e); } };
+}
+
+describe('门面真正发送', () => {
+  test('flushNow 把 summary 发给 summary transport', async () => {
+    const t = createTelemetry({ appId: 'app1' });
+    const tr = fakeTransport(['summary']);
+    t._transports.length = 0; t._transports.push(tr);
+    await t.reporter.flushNow();
+    expect(tr.sent).toHaveLength(1);
+    expect(tr.sent[0].kind).toBe('summary');
+    expect(tr.sent[0].appId).toBe('app1');
+  });
+
+  test('collect 把 diagnostics 发给 diagnostics transport，并回传 ref', async () => {
+    const t = createTelemetry({ appId: 'app1' });
+    const tr = fakeTransport(['diagnostics']);
+    t._transports.length = 0; t._transports.push(tr);
+    const r = await t.diagnostics.collect({ userMessage: 'bug', extra: { a: 1 } });
+    expect(r.ok).toBe(true);
+    expect(tr.sent[0].kind).toBe('diagnostics');
+    expect(tr.sent[0].ref).toBe(r.ref);
+    expect(tr.sent[0].data.userMessage).toBe('bug');
+  });
+
+  test('transport.send 抛错不影响返回 ok', async () => {
+    const t = createTelemetry({ appId: 'app1' });
+    const bad = { use:['diagnostics'], accepts(){return true;}, async send(){ throw new Error('net'); } };
+    t._transports.length = 0; t._transports.push(bad);
+    const r = await t.diagnostics.collect({ userMessage: 'x' });
+    expect(r.ok).toBe(true);
+  });
+});

@@ -3,6 +3,7 @@
 const os = require('os');
 const { v4: uuidv4 } = require('uuid');
 const { createTransport } = require('./transports/Transport');
+const { buildEnvelope } = require('./envelope');
 
 function createTelemetry(config = {}) {
   if (!config.appId) {
@@ -26,19 +27,51 @@ function createTelemetry(config = {}) {
     }
   }
 
+  const startedAt = new Date().toISOString();
+
+  async function dispatch(envelope) {
+    for (const tr of transports) {
+      if (!tr.accepts(envelope.kind)) continue;
+      try {
+        await tr.send(envelope);
+      } catch (e) {
+        console.warn(`[app-telemetry] 发送失败(${envelope.kind}): ${e.message}`);
+        // Spool 重试在 Task 12 接入
+      }
+    }
+  }
+
   const reporter = {
-    start() { /* 阶段后续填充定时逻辑 */ },
-    async flushNow() { return { ok: true, skipped: true }; },
+    start() { /* Task 13 接入定时逻辑 */ },
+    async flushNow() {
+      const envelope = buildEnvelope({
+        kind: 'summary',
+        base,
+        data: {
+          startedAt,
+          uptimeMs: Date.now() - new Date(startedAt).getTime(),
+        },
+      });
+      await dispatch(envelope);
+      return { ok: true };
+    },
   };
 
   const diagnostics = {
     async collect({ userMessage, extra } = {}) {
       const ref = uuidv4().slice(0, 8);
-      return { ok: true, skipped: true, ref };
+      const envelope = buildEnvelope({
+        kind: 'diagnostics',
+        base,
+        ref,
+        data: { userMessage, extra },
+      });
+      await dispatch(envelope);
+      return { ok: true, ref };
     },
   };
 
-  async function shutdown() { /* 阶段后续填充 */ }
+  async function shutdown() { /* Task 13 接入 */ }
 
   return { reporter, diagnostics, shutdown, _base: base, _transports: transports };
 }
