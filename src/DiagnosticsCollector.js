@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const { buildEnvelope } = require('./envelope');
 const { collectEnv } = require('./env');
 
@@ -40,7 +40,7 @@ class DiagnosticsCollector {
   }
 
   async collect({ userMessage, extra } = {}) {
-    const ref = uuidv4().slice(0, 8);
+    const ref = crypto.randomUUID().slice(0, 8);
     const logs = readLogTail(this.logDir, this.maxLogBytes);
     const envelope = buildEnvelope({
       kind: 'diagnostics',
