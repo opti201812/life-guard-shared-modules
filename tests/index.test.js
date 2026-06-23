@@ -62,3 +62,18 @@ describe('门面真正发送', () => {
     expect(r.ok).toBe(true);
   });
 });
+
+describe('ErrorCounter 接入摘要', () => {
+  test('注入 logger 后 flushNow 携带 errorCount', async () => {
+    const listeners = [];
+    const logger = { on(_e, fn){ listeners.push(fn); } };
+    const t = createTelemetry({ appId: 'app1', logger });
+    const tr = fakeTransport(['summary']);
+    t._transports.length = 0; t._transports.push(tr);
+    listeners.forEach(fn => fn({ level: 'info' }));
+    listeners.forEach(fn => fn({ level: 'error' }));
+    listeners.forEach(fn => fn({ level: 'error' }));
+    await t.reporter.flushNow();
+    expect(tr.sent[0].data.errorCount).toBe(2);
+  });
+});

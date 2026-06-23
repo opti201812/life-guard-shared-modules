@@ -4,6 +4,7 @@ const os = require('os');
 const { v4: uuidv4 } = require('uuid');
 const { createTransport } = require('./transports/Transport');
 const { buildEnvelope } = require('./envelope');
+const { ErrorCounter } = require('./ErrorCounter');
 
 function createTelemetry(config = {}) {
   if (!config.appId) {
@@ -29,6 +30,8 @@ function createTelemetry(config = {}) {
 
   const startedAt = new Date().toISOString();
 
+  const errorCounter = config.logger ? new ErrorCounter().attach(config.logger) : null;
+
   async function dispatch(envelope) {
     for (const tr of transports) {
       if (!tr.accepts(envelope.kind)) continue;
@@ -50,6 +53,7 @@ function createTelemetry(config = {}) {
         data: {
           startedAt,
           uptimeMs: Date.now() - new Date(startedAt).getTime(),
+          errorCount: errorCounter ? errorCounter.getAndReset() : undefined,
         },
       });
       await dispatch(envelope);
