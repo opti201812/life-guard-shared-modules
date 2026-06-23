@@ -1,0 +1,29 @@
+{
+  "name": "@life-guard/app-telemetry",
+  "version": "0.1.0",
+  "description": "LifeGuard 应用遥测与诊断上报模块",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch"
+  },
+  "dependencies": {
+    "axios": "^1.13.5",
+    "node-schedule": "^2.1.1",
+    "uuid": "^9.0.1"
+  },
+  "peerDependencies": {
+    "winston": "^3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "winston": { "optional": true }
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opti201812/life-guard-shared-modules.git"
+  }
+}
