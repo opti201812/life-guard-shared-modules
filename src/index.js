@@ -1,10 +1,10 @@
 'use strict';
 
 const os = require('os');
-const { v4: uuidv4 } = require('uuid');
 const { createTransport } = require('./transports/Transport');
 const { buildEnvelope } = require('./envelope');
 const { ErrorCounter } = require('./ErrorCounter');
+const { DiagnosticsCollector } = require('./DiagnosticsCollector');
 
 function createTelemetry(config = {}) {
   if (!config.appId) {
@@ -61,18 +61,17 @@ function createTelemetry(config = {}) {
     },
   };
 
+  const diagCfg = config.diagnostics || {};
+  const diagnosticsCollector = new DiagnosticsCollector({
+    base,
+    dispatch,
+    logDir: diagCfg.logDir,
+    maxLogBytes: diagCfg.maxLogBytes,
+    envWhitelist: diagCfg.envWhitelist,
+  });
+
   const diagnostics = {
-    async collect({ userMessage, extra } = {}) {
-      const ref = uuidv4().slice(0, 8);
-      const envelope = buildEnvelope({
-        kind: 'diagnostics',
-        base,
-        ref,
-        data: { userMessage, extra },
-      });
-      await dispatch(envelope);
-      return { ok: true, ref };
-    },
+    collect: (args) => diagnosticsCollector.collect(args),
   };
 
   async function shutdown() { /* Task 13 接入 */ }
