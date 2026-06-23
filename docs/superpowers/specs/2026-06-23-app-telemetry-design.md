@@ -45,6 +45,42 @@
 - **诊断** → Axiom / Grafana Cloud（HTTP ingest JSON 事件，带 traceId）。
 - Axiom 与 Grafana Loki 都是「HTTP POST + token」模式，收敛为同一个 `HttpIngestTransport`，靠 `vendor` 配置区分。
 
+### Axiom / Grafana Cloud 接入配置
+
+> 以下为调用两家 ingest API 所需的配置项。具体 endpoint host、token 申请入口请以各家官网当前文档为准（免费档与路径可能调整）。
+
+#### Axiom
+
+| 配置项 | 说明 | 从哪获取 |
+|---|---|---|
+| `endpoint` | `https://api.axiom.co/v1/datasets/{dataset}/ingest` | 固定，`{dataset}` 替换为你的数据集名 |
+| `token` | API token，形如 `xaat-xxxxxxxx` | Axiom 控制台 → Settings → API tokens，创建一个有 **ingest** 权限的 token |
+| `dataset` | 数据集名，如 `lifeguard` | Axiom 控制台 → Datasets，先创建一个 dataset |
+
+- **认证**：HTTP Header `Authorization: Bearer <token>`
+- **请求**：`POST`，`Content-Type: application/json`，body 为事件数组 `[{ ... }]`，每个对象一个事件；可带 `_time`（ISO 时间），缺省用服务器时间。
+- **申请步骤**：注册 Axiom 账号 → 创建 dataset → 创建带 ingest 权限的 API token。
+
+#### Grafana Cloud（Loki）
+
+| 配置项 | 说明 | 从哪获取 |
+|---|---|---|
+| `endpoint` | `https://logs-prod-xxx.grafana.net/loki/api/v1/push` | Grafana Cloud → 左侧 Loki/Logs 的 **Details/Send Logs** 页，host 因区域而异 |
+| `userId` | Loki 实例的数字 user id | 同上页面（"User" 字段） |
+| `token` | Cloud Access Policy token，需 `logs:write` scope | Grafana Cloud → Access Policies，创建 policy（含 logs:write）→ 生成 token |
+
+- **认证**：HTTP Basic Auth，username = `userId`，password = `token`。
+- **请求**：`POST`，`Content-Type: application/json`，body：
+  ```json
+  { "streams": [ { "stream": { "app": "lifeguard", "kind": "summary" },
+                    "values": [ [ "<unix_nano_timestamp>", "<log line 字符串>" ] ] } ] }
+  ```
+  其中时间戳是纳秒级字符串，日志行是字符串（结构化数据需 JSON.stringify 后放入）。
+
+#### 模块的抽象
+
+`HttpIngestTransport` 用 `vendor: 'axiom' | 'grafanaLoki'` 区分，内部把统一的 `envelope`（见 §4）转换成各家 body 格式与认证头。应用方只填上表配置，不关心格式差异。
+
 ### 可插拔 Transport（核心设计决策）
 
 发送方式做成可插拔接口。当下「不搭服务」即可落地；将来若支持方自建服务，只需新增/切换 Transport 配置，**应用代码不变**，避免返工。
@@ -139,6 +175,28 @@ TelemetryReporter / DiagnosticsCollector
 
 **界面归属**：模块**不含 UI**，仅暴露 `collect()`。应用方自行实现按钮/弹窗并调用（符合需求「应用内实现交互界面并调用此模块」）。
 
+### 4.3 统一信封 envelope（Transport 的输入契约）
+
+所有数据在交给 Transport 前先归一化为 `envelope`，Transport 再转成各家格式：
+
+```js
+{
+  kind: 'summary' | 'diagnostics',   // 数据类别，对应 transport 的 use
+  appId: 'lifeguard-backend',
+  instanceId: 'host-1',
+  version: '2.5.0',
+  env: 'production',
+  timestamp: '2026-06-23T08:00:00.000Z',  // ISO
+  ref: 'a1b2c3d4',                   // diagnostics 必有；summary 可选
+  data: { /* 摘要字段 或 诊断字段，见 4.1 / 4.2 */ }
+}
+```
+
+- `WebhookTransport`：把 envelope 渲染成人可读 markdown/文本消息体。
+- `HttpIngestTransport`：
+  - axiom → `[{ _time: timestamp, ...envelope }]`
+  - grafanaLoki → `{ streams: [{ stream: {app: appId, kind}, values: [[unixNano, JSON.stringify(envelope)]] }] }`
+
 ---
 
 ## 5. 配置结构
@@ -168,7 +226,8 @@ const telemetry = createTelemetry({
       vendor: 'axiom',                // 'axiom' | 'grafanaLoki'
       endpoint: process.env.AXIOM_INGEST_URL,
       token: process.env.AXIOM_TOKEN,
-      dataset: 'lifeguard',
+      dataset: 'lifeguard',           // axiom 需要；grafanaLoki 用 userId 代替见下
+      // grafanaLoki 时额外需要：userId: process.env.GRAFANA_USER_ID,
       use: ['summary', 'diagnostics'] },
   ],
 
