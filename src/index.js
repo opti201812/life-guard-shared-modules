@@ -5,6 +5,7 @@ const { createTransport } = require('./transports/Transport');
 const { buildEnvelope } = require('./envelope');
 const { ErrorCounter } = require('./ErrorCounter');
 const { DiagnosticsCollector } = require('./DiagnosticsCollector');
+const { Spool } = require('./Spool');
 
 function createTelemetry(config = {}) {
   if (!config.appId) {
@@ -32,16 +33,35 @@ function createTelemetry(config = {}) {
 
   const errorCounter = config.logger ? new ErrorCounter().attach(config.logger) : null;
 
-  async function dispatch(envelope) {
+  const spool = new Spool(config.spool || {});
+
+  async function sendToTransports(envelope) {
+    let anySuccess = false;
     for (const tr of transports) {
       if (!tr.accepts(envelope.kind)) continue;
       try {
         await tr.send(envelope);
+        anySuccess = true;
       } catch (e) {
         console.warn(`[app-telemetry] 发送失败(${envelope.kind}): ${e.message}`);
-        // Spool 重试在 Task 12 接入
       }
     }
+    return anySuccess;
+  }
+
+  async function dispatch(envelope) {
+    // 先尝试重发积压
+    for (const file of spool.list()) {
+      try {
+        const env = spool.read(file);
+        if (await sendToTransports(env)) spool.remove(file);
+      } catch (e) {
+        // 读取异常跳过，保留待下次
+      }
+    }
+    // 发送当前 envelope；全部失败则入队等下次重发
+    const ok = await sendToTransports(envelope);
+    if (!ok) spool.push(envelope);
   }
 
   const reporter = {
