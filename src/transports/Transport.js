@@ -18,9 +18,11 @@ class Transport {
 
 function createTransport(cfg = {}) {
   switch (cfg.type) {
-    // 子类在 Task 5/8 接入：
-    // case 'webhook': return new WebhookTransport(cfg);
-    // case 'httpIngest': return new HttpIngestTransport(cfg);
+    case 'httpIngest': {
+      const { HttpIngestTransport } = require('./HttpIngestTransport');
+      return new HttpIngestTransport(cfg);
+    }
+    // case 'webhook': return new WebhookTransport(cfg); // Task 8 接入
     default:
       throw new Error(`未知的 transport type: ${cfg.type}`);
   }
