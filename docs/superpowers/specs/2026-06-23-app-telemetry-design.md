@@ -70,6 +70,72 @@
   - EU：`https://eu-central-1.aws.edge.axiom.co/v1/ingest/life-guard`
 - **申请步骤**：注册 Axiom 账号 → 创建 dataset（记下 region）→ 创建带 ingest 权限的 API token（与 dataset 同区）。
 
+##### Axiom 实际调用方法（备查）
+
+> 以下为 2026-06-23 真实联调验证过的调用方式，供排查与手动验证参考。token 权限不同，可用操作不同。
+
+**1. ingest（写入事件）— 模块核心调用**
+
+```bash
+# EU 区 dataset（region=eu-central-1）
+curl -X POST 'https://eu-central-1.aws.edge.axiom.co/v1/ingest/life-guard' \
+  -H 'Authorization: Bearer xaat-<token>' \
+  -H 'Content-Type: application/x-ndjson' \
+  -d '{"_time":"2026-06-23T12:00:00.000Z","kind":"summary","appId":"example-backend","env":"live-test","data":{"errorCount":0}}
+'
+
+# US 区 dataset（region=us-east-1）只需换 host：
+# curl -X POST 'https://api.axiom.co/v1/ingest/life-guard' ...
+```
+
+- body 是 **NDJSON**：每行一个独立 JSON 对象，多事件就多行（不要写成 JSON 数组，虽然 Axiom 也接受数组，但 NDJSON 是官方推荐且支持流式）。
+- `_time` 可选，缺省用服务器接收时间。
+- 成功响应（HTTP 200）：
+  ```json
+  {"ingested":1,"failed":0,"failures":[],"processedBytes":106,"blocksCreated":0,"walLength":1}
+  ```
+  **验证依据**：`ingested` 为实际写入条数，`failed` 应为 0。模块联调脚本即以此为成功判据。
+
+**2. 列出 datasets（确认 dataset 名与 region）**
+
+```bash
+curl -H 'Authorization: Bearer xaat-<token>' https://api.axiom.co/v1/datasets
+# 关注每项的 name 与 edgeDeployment（如 cloud.eu-central-1.aws）
+```
+
+**3. 查询 dataset（APL）**
+
+```bash
+curl -X POST 'https://api.axiom.co/v1/datasets/_apl' \
+  -H 'Authorization: Bearer xaat-<token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"'\''example-backend'\'' | summarize count = count() by kind","startTime":"2026-06-23T00:00:00Z","endTime":"2026-06-24T00:00:00Z"}'
+```
+
+- 查询端点在 `api.axiom.co`（所有非 ingest 的 API 都走此域名，不分 region）。
+- **注意权限**：ingest token 通常**无 query read 权限**，会返回 `403 token does not have access to resource: query with action: read`。要查询需在控制台创建带 `query:read` 权限的 token，或直接用网页控制台 Flow/Query。
+
+**4. 踩坑记录（联调中实测）**
+
+| 现象 | 原因 | 解决 |
+|---|---|---|
+| `400 ingest is only allowed into datasets in the primary region: dataset region: cloud.eu-central-1.aws, deployment region: cloud.us-east-1.aws` | 用 US host（`api.axiom.co`）写 EU dataset | 按 region 选对 host：EU 用 `eu-central-1.aws.edge.axiom.co` |
+| `403 forbidden`（EU host 上） | token 与 dataset 不同区，或 token 无该 dataset 权限 | 用与 dataset 同区签发的 token |
+| `404 path /v1/datasets/{name}/ingest was not found` | 路径写错 | 正确路径是 `/v1/ingest/{dataset}` |
+| `403 query with action: read` | ingest token 无查询权限 | 查询用带 query:read 的 token，或用控制台 |
+| EU host 误用 `api.eu.axiom.co` | 旧猜测，该 host 返回 403 且非官方 | 官方 EU host 是 `eu-central-1.aws.edge.axiom.co` |
+
+**5. 区域 host 对照（权威来源）**
+
+来自 [Axiom edge deployments 文档](https://axiom.co/docs/reference/edge-deployments)：
+
+| Edge deployment | Base domain for ingest and query | 模块 region 值 |
+|---|---|---|
+| US East 1 (AWS) | `api.axiom.co` | `us-east-1` |
+| EU Central 1 (AWS) | `eu-central-1.aws.edge.axiom.co` | `eu-central-1` |
+
+> 其余所有 API（datasets 列表、查询、账户等）的 base domain 一律是 `api.axiom.co`，与 dataset region 无关。仅 ingest 必须 hit dataset 所在 region 的 edge host。模块 `HttpIngestTransport` 已内置此映射，应用方只需填 `region` + `dataset`。
+
 #### Grafana Cloud（Loki）
 
 | 配置项 | 说明 | 从哪获取 |
