@@ -53,13 +53,22 @@
 
 | 配置项 | 说明 | 从哪获取 |
 |---|---|---|
-| `endpoint` | `https://api.axiom.co/v1/datasets/{dataset}/ingest` | 固定，`{dataset}` 替换为你的数据集名 |
+| `dataset` | 数据集名，如 `life-guard` | Axiom 控制台 → Datasets，先创建一个 dataset |
+| `region` | dataset 所在 edge deployment：`'us-east-1'`（默认）或 `'eu-central-1'` | 控制台创建 dataset 时选的 region；**必须与 dataset 实际区域一致**，否则跨区 ingest 报 400 |
 | `token` | API token，形如 `xaat-xxxxxxxx` | Axiom 控制台 → Settings → API tokens，创建一个有 **ingest** 权限的 token |
-| `dataset` | 数据集名，如 `lifeguard` | Axiom 控制台 → Datasets，先创建一个 dataset |
+| `endpoint` | 可选，覆盖自动推导的 URL | 一般不填，模块按 region 自动拼 |
 
+- **关键：region 与 host 对应**（来自 [Axiom edge deployments 文档](https://axiom.co/docs/reference/edge-deployments)）：
+  - **US East 1 (AWS)** → ingest 域名 `api.axiom.co`
+  - **EU Central 1 (AWS)** → ingest 域名 `eu-central-1.aws.edge.axiom.co`
+  - 模块按 `region` 自动选择 host。**token 与 dataset 必须同区**——US token 写不进 EU dataset（403），反之报 region 400。
+- **ingest 路径**：`POST /v1/ingest/{dataset}`（注意是 `/v1/ingest/`，不是 `/v1/datasets/{name}/ingest`）。
 - **认证**：HTTP Header `Authorization: Bearer <token>`
-- **请求**：`POST`，`Content-Type: application/json`，body 为事件数组 `[{ ... }]`，每个对象一个事件；可带 `_time`（ISO 时间），缺省用服务器时间。
-- **申请步骤**：注册 Axiom 账号 → 创建 dataset → 创建带 ingest 权限的 API token。
+- **请求**：`POST`，`Content-Type: application/x-ndjson`，body 为 NDJSON（每行一个 JSON 事件对象）；可带 `_time`（ISO 时间），缺省用服务器时间。模块也兼容 JSON 数组格式。
+- **完整 URL 示例**：
+  - US：`https://api.axiom.co/v1/ingest/life-guard`
+  - EU：`https://eu-central-1.aws.edge.axiom.co/v1/ingest/life-guard`
+- **申请步骤**：注册 Axiom 账号 → 创建 dataset（记下 region）→ 创建带 ingest 权限的 API token（与 dataset 同区）。
 
 #### Grafana Cloud（Loki）
 
@@ -224,10 +233,10 @@ const telemetry = createTelemetry({
       use: ['summary'] },
     { type: 'httpIngest',
       vendor: 'axiom',                // 'axiom' | 'grafanaLoki'
-      endpoint: process.env.AXIOM_INGEST_URL,
+      region: 'eu-central-1',         // axiom: dataset 所在区域 us-east-1|eu-central-1，模块按此选 host
+      dataset: 'life-guard',          // axiom 必填
       token: process.env.AXIOM_TOKEN,
-      dataset: 'lifeguard',           // axiom 需要；grafanaLoki 用 userId 代替见下
-      // grafanaLoki 时额外需要：userId: process.env.GRAFANA_USER_ID,
+      // grafanaLoki 时改用：endpoint, userId, token
       use: ['summary', 'diagnostics'] },
   ],
 

@@ -28,8 +28,9 @@ const telemetry = createTelemetry({
   transports: [
     {
       type: 'httpIngest', vendor: 'axiom',
-      endpoint: process.env.AXIOM_INGEST_URL,
-      token: process.env.AXIOM_TOKEN, dataset: 'lifeguard',
+      region: 'eu-central-1',          // dataset 所在区域：us-east-1 | eu-central-1
+      dataset: 'life-guard',
+      token: process.env.AXIOM_TOKEN,
       use: ['summary', 'diagnostics'],
     },
   ],

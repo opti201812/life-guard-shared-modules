@@ -6,8 +6,9 @@ const transports = [];
 if (process.env.AXIOM_TOKEN) {
   transports.push({
     type: 'httpIngest', vendor: 'axiom',
-    endpoint: process.env.AXIOM_INGEST_URL,
-    token: process.env.AXIOM_TOKEN, dataset: 'lifeguard',
+    region: process.env.AXIOM_REGION || 'us-east-1',
+    dataset: process.env.AXIOM_DATASET || 'life-guard',
+    token: process.env.AXIOM_TOKEN,
     use: ['summary', 'diagnostics'],
   });
 }
