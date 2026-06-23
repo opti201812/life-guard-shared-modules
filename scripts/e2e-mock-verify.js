@@ -55,26 +55,35 @@ server.listen(0, async () => {
 
   console.log(`\n收到 ${received.length} 次请求，ref=${r.ref}`);
   let ok = true;
+  const kinds = new Set();
+  const paths = new Set();
   for (const req of received) {
     console.log('\n---', req.url, '| auth:', req.auth);
+    paths.add(req.url.includes('/v1/datasets/') ? 'axiom' : 'loki');
     try {
       const parsed = JSON.parse(req.body);
       if (req.url.includes('/v1/datasets/')) {
         // axiom: 事件数组
         const ev = parsed[0];
+        kinds.add(ev.kind);
         console.log('  axiom event:', { kind: ev.kind, appId: ev.appId, _time: ev._time });
         if (!Array.isArray(parsed) || !ev.appId) ok = false;
       } else if (req.url.includes('/loki/api/v1/push')) {
         // grafana: streams
         const line = parsed.streams[0].values[0][1];
         const ev = JSON.parse(line);
+        kinds.add(ev.kind);
         console.log('  loki stream:', { app: parsed.streams[0].stream.app, kind: ev.kind, appId: ev.appId });
         if (!parsed.streams || !ev.appId) ok = false;
       }
     } catch (e) { console.log('  parse err', e.message); ok = false; }
   }
 
-  console.log(`\n${ok && received.length === 4 ? 'PASS ✓ 端到端发送成功，4 次请求格式正确' : 'FAIL ✗'}`);
+  // 期望：summary 与 diagnostics 两类都收到，axiom 与 loki 两条路径都用上
+  const pass = ok && kinds.has('summary') && kinds.has('diagnostics')
+    && paths.has('axiom') && paths.has('loki') && received.length >= 4;
+  console.log(`\n  kinds=${[...kinds].join(',')} paths=${[...paths].join(',')}`);
+  console.log(`${pass ? 'PASS ✓ 端到端发送成功，summary+diagnostics 经 axiom/grafanaLoki 两条路径发出' : 'FAIL ✗'}`);
   server.close();
-  process.exit(ok && received.length === 4 ? 0 : 1);
+  process.exit(pass ? 0 : 1);
 });

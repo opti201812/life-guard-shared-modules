@@ -8,7 +8,8 @@ beforeEach(() => { spoolDir = fs.mkdtempSync(path.join(os.tmpdir(), 'spool-')); 
 afterEach(() => { fs.rmSync(spoolDir, { recursive: true, force: true }); });
 
 function makeT(cfg = {}) {
-  return createTelemetry({ appId: 'app1', spool: { dir: spoolDir }, ...cfg });
+  // summary.enabled:false 避免测试自动注册真实 node-schedule 定时器
+  return createTelemetry({ appId: 'app1', spool: { dir: spoolDir }, summary: { enabled: false }, ...cfg });
 }
 
 function fakeTransport(use) {

@@ -2,10 +2,10 @@
 
 const os = require('os');
 const { createTransport } = require('./transports/Transport');
-const { buildEnvelope } = require('./envelope');
 const { ErrorCounter } = require('./ErrorCounter');
 const { DiagnosticsCollector } = require('./DiagnosticsCollector');
 const { Spool } = require('./Spool');
+const { TelemetryReporter } = require('./TelemetryReporter');
 
 function createTelemetry(config = {}) {
   if (!config.appId) {
@@ -64,22 +64,22 @@ function createTelemetry(config = {}) {
     if (!ok) spool.push(envelope);
   }
 
+  const summaryCfg = config.summary || {};
+  const reporterImpl = new TelemetryReporter({
+    base,
+    dispatch,
+    errorCounter,
+    schedule: summaryCfg.schedule,
+    sendOnExit: summaryCfg.sendOnExit,
+    startedAt,
+  });
+
   const reporter = {
-    start() { /* Task 13 接入定时逻辑 */ },
-    async flushNow() {
-      const envelope = buildEnvelope({
-        kind: 'summary',
-        base,
-        data: {
-          startedAt,
-          uptimeMs: Date.now() - new Date(startedAt).getTime(),
-          errorCount: errorCounter ? errorCounter.getAndReset() : undefined,
-        },
-      });
-      await dispatch(envelope);
-      return { ok: true };
-    },
+    start: () => reporterImpl.start(),
+    flushNow: (final) => reporterImpl.flushNow(final).then(() => ({ ok: true })),
   };
+
+  if (summaryCfg.enabled !== false) reporterImpl.start();
 
   const diagCfg = config.diagnostics || {};
   const diagnosticsCollector = new DiagnosticsCollector({
@@ -94,9 +94,14 @@ function createTelemetry(config = {}) {
     collect: (args) => diagnosticsCollector.collect(args),
   };
 
-  async function shutdown() { /* Task 13 接入 */ }
+  async function shutdown() {
+    reporterImpl.stop();
+    if (summaryCfg.sendOnExit !== false) {
+      try { await reporterImpl.flushNow(true); } catch (_) {}
+    }
+  }
 
-  return { reporter, diagnostics, shutdown, _base: base, _transports: transports };
+  return { reporter, diagnostics, shutdown, _base: base, _transports: transports, _reporterImpl: reporterImpl };
 }
 
 module.exports = { createTelemetry };
