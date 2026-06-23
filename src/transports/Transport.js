@@ -22,7 +22,10 @@ function createTransport(cfg = {}) {
       const { HttpIngestTransport } = require('./HttpIngestTransport');
       return new HttpIngestTransport(cfg);
     }
-    // case 'webhook': return new WebhookTransport(cfg); // Task 8 接入
+    case 'webhook': {
+      const { WebhookTransport } = require('./WebhookTransport');
+      return new WebhookTransport(cfg);
+    }
     default:
       throw new Error(`未知的 transport type: ${cfg.type}`);
   }
