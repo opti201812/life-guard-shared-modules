@@ -28,3 +28,43 @@ describe('Spool', () => {
     expect(s.list().length).toBe(0);
   });
 });
+
+describe('Spool 目录不可写时降级', () => {
+  test('构造不抛错，enabled=false', () => {
+    // 用一个不可写的父目录构造 spool 子目录（mkdirSync 会失败）
+    const parent = tmpDir();
+    fs.chmodSync(parent, 0o555); // 只读，无法在其下创建子目录
+    let s;
+    try {
+      s = new Spool({ dir: path.join(parent, 'spool-sub'), maxItems: 10 });
+    } finally {
+      fs.chmodSync(parent, 0o755); // 恢复以便清理
+    }
+    expect(s.enabled).toBe(false);
+  });
+
+  test('disabled 时 push 不抛、list 返回空、不影响调用方', () => {
+    const parent = tmpDir();
+    fs.chmodSync(parent, 0o555);
+    let s;
+    try {
+      s = new Spool({ dir: path.join(parent, 'spool-sub'), maxItems: 10 });
+    } finally {
+      fs.chmodSync(parent, 0o755);
+    }
+    expect(() => s.push({ n: 1 })).not.toThrow();
+    expect(s.list()).toEqual([]);
+  });
+
+  test('disabled 时 read/remove 也安全 no-op', () => {
+    const parent = tmpDir();
+    fs.chmodSync(parent, 0o555);
+    let s;
+    try {
+      s = new Spool({ dir: path.join(parent, 'spool-sub'), maxItems: 10 });
+    } finally {
+      fs.chmodSync(parent, 0o755);
+    }
+    expect(() => s.remove('/nonexistent/file')).not.toThrow();
+  });
+});
