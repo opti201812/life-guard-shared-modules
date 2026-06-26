@@ -30,9 +30,11 @@ class TelemetryReporter {
     if (this.job) return;
     this.job = schedule.scheduleJob(this.cron, () => { this.flushNow().catch(() => {}); });
     if (this.sendOnExit) {
+      // 仅注册 beforeExit 作为「事件循环自然排空」时的兜底上报；
+      // SIGTERM/SIGINT 不在此注册——信号退出由宿主 await shutdown() 负责，
+      // 否则会与宿主的关闭流程并发触发 flushNow，产生重复 final 摘要，
+      // 且此处无法阻塞进程退出，HTTP 会被 process.exit 强杀而发不出去。
       this._exitBound = () => { this.flushNow(true).catch(() => {}); };
-      process.once('SIGTERM', this._exitBound);
-      process.once('SIGINT', this._exitBound);
       process.once('beforeExit', this._exitBound);
     }
   }
@@ -40,8 +42,6 @@ class TelemetryReporter {
   stop() {
     if (this.job) { this.job.cancel(); this.job = null; }
     if (this._exitBound) {
-      process.removeListener('SIGTERM', this._exitBound);
-      process.removeListener('SIGINT', this._exitBound);
       process.removeListener('beforeExit', this._exitBound);
       this._exitBound = null;
     }

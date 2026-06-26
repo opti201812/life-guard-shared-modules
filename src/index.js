@@ -79,7 +79,12 @@ function createTelemetry(config = {}) {
     flushNow: (final) => reporterImpl.flushNow(final).then(() => ({ ok: true })),
   };
 
-  if (summaryCfg.enabled !== false) reporterImpl.start();
+  if (summaryCfg.enabled !== false) {
+    reporterImpl.start();
+    // 启动即上报一次：不等结果（失败有定时重试与 Spool 兜底），
+    // 便于在 Axiom 第一时间看到实例上线事件，而非等到首个 cron 周期。
+    reporterImpl.flushNow().catch(() => {});
+  }
 
   const diagCfg = config.diagnostics || {};
   const diagnosticsCollector = new DiagnosticsCollector({
